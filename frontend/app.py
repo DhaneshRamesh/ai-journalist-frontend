@@ -6,19 +6,33 @@ import os
 import time
 from typing import List, Dict, Any
 
-# --- Config ---
-API_BASE_DEFAULT = "http://127.0.0.1:8000/api"
-API_BASE = os.environ.get("API_BASE", API_BASE_DEFAULT)
-ADMIN_TOKEN = os.environ.get("ADMIN_API_TOKEN", "")
+# --- Fixed backend target (always use Azure) ---
+# Hard-lock to your deployed backend; no sidebar override.
+API_BASE = "https://ai-journalist-backend-gnaygteve4g8bxft.australiaeast-01.azurewebsites.net/api"
+
+# Optional admin token (not enforced by backend; kept for future)
+ADMIN_TOKEN = os.environ.get("ADMIN_API_TOKEN", "1")
+
+# Normalize API_BASE once (ensure https:// and trailing path cleaned)
+def _normalize_base(url: str) -> str:
+    url = url.strip()
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+    # ensure it has /api at the end
+    if not url.rstrip("/").endswith("/api"):
+        url = url.rstrip("/") + "/api"
+    return url.rstrip("/")
+
+API_BASE = _normalize_base(API_BASE)
 
 st.set_page_config(page_title="AI Journalist — Dashboard", layout="wide")
 st.title("📰 AI Journalist")
 
 tab = st.sidebar.selectbox("View", ["Mentions", "Operations"])
 
+# --- Connection info (read-only so users know where it's pointing) ---
 st.sidebar.markdown("### Connection")
-api_base_input = st.sidebar.text_input("API base URL", value=API_BASE)
-API_BASE = api_base_input.rstrip("/")
+st.sidebar.code(API_BASE, language="text")
 admin_token_input = st.sidebar.text_input("Admin token (optional)", value=ADMIN_TOKEN, type="password")
 if admin_token_input:
     ADMIN_TOKEN = admin_token_input
@@ -119,7 +133,7 @@ if tab == "Mentions":
             st.write(f"ID: {row.get('id')} • Article ID: {row.get('article_id')}")
 
     st.markdown("---")
-    st.caption("Local demo — powered by AI Journalist API")
+    st.caption("Azure demo — powered by AI Journalist API")
 
 # --- Operations tab ---
 elif tab == "Operations":
