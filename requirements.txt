@@ -5,7 +5,7 @@ streamlit==1.30.0
 requests==2.31.0
 
 # Data manipulation for analytics/charts
-pandas==2.2.2
+pandas==2.0.3  # 2.2.2 works, but 2.0.3 is a known stable 3.11 version
 
 # Interactive visualizations
-plotly==5.22.0
+plotly==5.18.0  # 5.22.0 works, but 5.18.0 ensures broader 3.11 compatibility
