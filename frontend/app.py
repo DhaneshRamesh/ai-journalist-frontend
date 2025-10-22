@@ -17,6 +17,7 @@ def _normalize_base(url: str) -> str:
     if not url.rstrip("/").endswith("/api"):
         url = url.rstrip("/") + "/api"
     return url.rstrip("/")
+
 API_BASE = _normalize_base(API_BASE)
 
 st.set_page_config(page_title="AI Journalist — Dashboard", layout="wide")
@@ -58,11 +59,13 @@ def fetch_mentions(limit: int = 50, source: str = None, sentiment: str = None, f
             d["source"] = article.get("source", "Unknown")
             d["summary"] = d.get("summary", "")
             d["sentiment"] = d.get("sentiment", "neutral")
+            d["sentiment_confidence"] = d.get("sentiment_confidence", 0.0)
             d["risk_score"] = d.get("risk_score", 0.0)
             d["id"] = d.get("id", 0)
             d["article_id"] = d.get("article_id", 0)
             d["flagged"] = d.get("flagged", False)
             d["flag_reason"] = d.get("flag_reason", "")
+            d["flagged_at"] = d.get("flagged_at", None)
         return data
     except Exception as e:
         st.session_state.setdefault("_fetch_error", str(e))
@@ -83,7 +86,7 @@ if tab == "Mentions":
     # Dynamic Keyword Search
     st.subheader("🔍 Dynamic Keyword Search")
     keywords_input = st.text_area(
-        "Keywords (one per line)",
+        "Keywords (one per line, e.g., 'climate change')",
         placeholder="India\nOpenAI\nxAI",
         height=100
     )
@@ -122,7 +125,6 @@ if tab == "Mentions":
                     st.error(f"❌ Fetch failed: {str(e)}")
         else:
             st.error("⚠️ Please enter at least one keyword!")
-
     # Fetch Mentions
     mentions = fetch_mentions(limit=50)
     fetch_error = st.session_state.pop("_fetch_error", None)
@@ -131,20 +133,22 @@ if tab == "Mentions":
     if not mentions:
         st.info("No mentions found. Try the 'Dynamic Keyword Search' above!")
         st.stop()
-
     # Convert to DataFrame
     df = pd.DataFrame(mentions)
-
     # Dynamically get unique sources
     unique_sources = sorted([s for s in df['source'].dropna().unique() if s and s != "Unknown"])
-
     # Filters
     st.subheader("🔍 Filters")
-    limit = st.number_input("Items to show", min_value=10, max_value=100, value=25)
-    source_filter = st.multiselect("Filter sources", options=unique_sources, default=[])
-    sentiment_filter = st.selectbox("Sentiment", options=["All", "positive", "negative", "neutral"], index=0)
-    flagged_filter = st.checkbox("Show flagged articles only")
-
+    col1, col2 = st.columns(2)
+    with col1:
+        limit = st.number_input("Items to show", min_value=10, max_value=100, value=25)
+    with col2:
+        source_filter = st.multiselect("Filter sources", options=unique_sources, default=[])
+    col3, col4 = st.columns(2)
+    with col3:
+        sentiment_filter = st.selectbox("Sentiment", options=["All", "Positive", "Negative", "Neutral"], index=0)
+    with col4:
+        flagged_filter = st.checkbox("Show flagged articles only")
     # Apply Filters
     filtered_df = df.copy()
     if source_filter:
@@ -153,7 +157,6 @@ if tab == "Mentions":
         filtered_df = filtered_df[filtered_df['sentiment'] == sentiment_filter.lower()]
     if flagged_filter:
         filtered_df = filtered_df[filtered_df['flagged'] == True]
-
     # Stats
     try:
         stats = requests.get(f"{API_BASE}/stats", timeout=5).json()
@@ -162,10 +165,9 @@ if tab == "Mentions":
         st.markdown(f"**Unique Sources:** {len(unique_sources)}")
         st.markdown(f"**Positive:** {stats['sentiment_distribution'].get('positive', 0)}")
         st.markdown(f"**Negative:** {stats['sentiment_distribution'].get('negative', 0)}")
-        st.markdown(f"**Avg Risk:** {sum(m['risk_score'] for m in mentions) / len(mentions) if mentions else 0:.1f}")
+        st.markdown(f"**Avg Risk:** {sum(m['risk_score'] for m in mentions) / len(mentions) if mentions else 0:.2f}")
     except Exception as e:
         st.error(f"Failed to fetch stats: {str(e)}")
-
     # Pagination
     per_page = st.selectbox("Per page", [5, 10, 20], index=1)
     max_page = max(1, (len(filtered_df) - 1) // per_page + 1)
@@ -173,25 +175,28 @@ if tab == "Mentions":
     start = (page - 1) * per_page
     end = start + per_page
     page_df = filtered_df.iloc[start:end]
-
     # Display Mentions
     for _, row in page_df.iterrows():
         st.markdown("---")
         title = row["title"]
         url = row["url"]
         source = row["source"]
+        risk_score = row["risk_score"]
+        # Color-coded risk badge
+        risk_color = "red" if risk_score >= 0.7 else "orange" if risk_score >= 0.4 else "green"
+        risk_label = f"<span style='color: {risk_color};'>●</span> Risk: {risk_score:.2f}"
         if url and title:
             clean_title = title[:100] + "..." if len(title) > 100 else title
-            st.markdown(f"[{clean_title}]({url})  <font color='#6f6f6f'>{source}</font>", unsafe_allow_html=True)
+            st.markdown(f"[{clean_title}]({url}) <font color='#6f6f6f'>{source}</font>", unsafe_allow_html=True)
         else:
-            st.markdown(f"{title or '(untitled)'}  <font color='#6f6f6f'>{source}</font>", unsafe_allow_html=True)
-        st.write(f"📝 Summary: {row['summary'][:100]}...")
-        st.write(f"**Sentiment:** {row['sentiment'].upper()} • **Risk:** {row['risk_score']:.1f} • **Source:** {source}")
+            st.markdown(f"{title or '(untitled)'} <font color='#6f6f6f'>{source}</font>", unsafe_allow_html=True)
+        st.markdown(f"📝 **Summary**: {row['summary']}", unsafe_allow_html=True)
+        st.markdown(f"**Sentiment**: {row['sentiment'].upper()} ({row['sentiment_confidence']:.2f}) • **{risk_label}** • **Source**: {source}", unsafe_allow_html=True)
         if row.get("flagged", False):
-            st.markdown(f"🚩 **Flagged: {row.get('flag_reason', 'urgent')}**")
+            st.markdown(f"🚩 **Flagged: {row.get('flag_reason', 'urgent')}** at {row.get('flagged_at', '')}")
         cols = st.columns([1, 1, 6])
         with cols[0]:
-            # 🔥 REAL FLAG BUTTON
+            # Flag Button
             if st.button("🚩 Flag", key=f"flag-{row['id']}", disabled=row.get("flagged", False)):
                 try:
                     r = requests.post(
@@ -208,7 +213,7 @@ if tab == "Mentions":
                 except Exception as e:
                     try_toast(f"Flag failed: {str(e)}")
         with cols[1]:
-            # 🔥 REAL SUGGEST JOURNALIST BUTTON
+            # Suggest Journalist Button
             if st.button("🎯 Suggest journalist", key=f"suggest-{row['id']}"):
                 try:
                     r = requests.get(
