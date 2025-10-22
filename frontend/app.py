@@ -34,12 +34,10 @@ admin_token_input = st.sidebar.text_input("Admin token (optional)", value=ADMIN_
 if admin_token_input:
     ADMIN_TOKEN = admin_token_input
 
-# Helpers
+# --- Helpers ---
 @st.cache_data(ttl=60)
 def fetch_mentions(limit: int = 50, source: str = None, sentiment: str = None, flagged: bool = None) -> List[Dict[str, Any]]:
-    """
-    Fetch mentions from backend with filters. Cached for 60s.
-    """
+    """Fetch mentions from backend with filters. Cached for 60s."""
     url = f"{API_BASE}/mentions"
     params = {"limit": limit}
     if source:
@@ -125,20 +123,8 @@ if tab == "Mentions":
         else:
             st.error("⚠️ Please enter at least one keyword!")
 
-    # Filters
-    st.subheader("🔍 Filters")
-    limit = st.number_input("Items to show", min_value=10, max_value=100, value=25)
-    source_filter = st.multiselect("Filter sources", options=["nytimes.com", "reuters.com", "bloomberg.com", "inquirer.com", "fastcompany.com"], default=[])
-    sentiment_filter = st.selectbox("Sentiment", options=["All", "positive", "negative", "neutral"], index=0)
-    flagged_filter = st.checkbox("Show flagged articles only")
-
     # Fetch Mentions
-    mentions = fetch_mentions(
-        limit=limit,
-        source=",".join(source_filter) if source_filter else None,
-        sentiment=sentiment_filter,
-        flagged=flagged_filter or None
-    )
+    mentions = fetch_mentions(limit=50)
     fetch_error = st.session_state.pop("_fetch_error", None)
     if fetch_error:
         st.error(f"Failed to fetch mentions: {fetch_error}")
@@ -146,27 +132,49 @@ if tab == "Mentions":
         st.info("No mentions found. Try the 'Dynamic Keyword Search' above!")
         st.stop()
 
+    # Convert to DataFrame
+    df = pd.DataFrame(mentions)
+
+    # Dynamically get unique sources
+    unique_sources = sorted([s for s in df['source'].dropna().unique() if s and s != "Unknown"])
+
+    # Filters
+    st.subheader("🔍 Filters")
+    limit = st.number_input("Items to show", min_value=10, max_value=100, value=25)
+    source_filter = st.multiselect("Filter sources", options=unique_sources, default=[])
+    sentiment_filter = st.selectbox("Sentiment", options=["All", "positive", "negative", "neutral"], index=0)
+    flagged_filter = st.checkbox("Show flagged articles only")
+
+    # Apply Filters
+    filtered_df = df.copy()
+    if source_filter:
+        filtered_df = filtered_df[filtered_df['source'].isin(source_filter)]
+    if sentiment_filter != "All":
+        filtered_df = filtered_df[filtered_df['sentiment'] == sentiment_filter.lower()]
+    if flagged_filter:
+        filtered_df = filtered_df[filtered_df['flagged'] == True]
+
     # Stats
     try:
         stats = requests.get(f"{API_BASE}/stats", timeout=5).json()
-        st.subheader(f"🗞️ Latest Mentions ({len(mentions)} shown)")
+        st.subheader(f"🗞️ Latest Mentions ({len(filtered_df)} shown)")
         st.markdown(f"**Total Mentions:** {stats['total_mentions']}")
-        st.markdown(f"**Unique Sources:** {len(set(m['source'] for m in mentions))}")
+        st.markdown(f"**Unique Sources:** {len(unique_sources)}")
         st.markdown(f"**Positive:** {stats['sentiment_distribution'].get('positive', 0)}")
         st.markdown(f"**Negative:** {stats['sentiment_distribution'].get('negative', 0)}")
         st.markdown(f"**Avg Risk:** {sum(m['risk_score'] for m in mentions) / len(mentions) if mentions else 0:.1f}")
     except Exception as e:
         st.error(f"Failed to fetch stats: {str(e)}")
 
-    # Mentions Table
-    df = pd.DataFrame(mentions)
+    # Pagination
     per_page = st.selectbox("Per page", [5, 10, 20], index=1)
-    max_page = max(1, (len(df) - 1) // per_page + 1)
+    max_page = max(1, (len(filtered_df) - 1) // per_page + 1)
     page = st.number_input("Page", min_value=1, max_value=max_page, value=1, step=1)
     start = (page - 1) * per_page
     end = start + per_page
-    page_df = df.iloc[start:end]
+    page_df = filtered_df.iloc[start:end]
 
+    # Display Mentions
     for _, row in page_df.iterrows():
         st.markdown("---")
         title = row["title"]
