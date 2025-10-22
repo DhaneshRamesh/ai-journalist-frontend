@@ -45,7 +45,10 @@ def fetch_mentions(limit=50, sources=None, sentiment=None, flagged=None):
             m["title"] = article.get("title", "(untitled)")
             m["link"] = article.get("link", "")
             m["source"] = article.get("source") or domain_from_url(m["link"])
-            m["summary"] = m.get("summary", "")
+            raw_summary = m.get("summary", "")
+            # Check if summary is a URL
+            m["summary"] = "(No summary available)" if raw_summary.startswith(("http://", "https://")) else raw_summary
+            m["raw_summary"] = raw_summary  # Debug field
             m["sentiment"] = m.get("sentiment", "neutral")
             m["sentiment_confidence"] = m.get("sentiment_confidence", 0.0)
             m["risk_score"] = m.get("risk_score", 0.0)
@@ -100,6 +103,12 @@ def format_risk(risk: float | int | None) -> str:
 # ─────────────────────────────
 st.title("📰 News Mentions Monitor")
 st.markdown("**Real-time news tracking with AI sentiment & risk analysis**")
+
+# Debug: Show raw summary for first mention
+if st.checkbox("Show raw summary (debug)"):
+    mentions_debug = fetch_mentions(limit=1)
+    if mentions_debug:
+        st.write("Raw summary (first mention):", mentions_debug[0].get("raw_summary", "N/A"))
 
 # ─────────────────────────────
 # SIDEBAR: FILTERS & CONTROLS
@@ -289,9 +298,11 @@ for i, mention in enumerate(filtered_mentions):
                 st.caption(f"*{source}*")
 
         # Summary
-        if summary:
+        if summary and summary != "(No summary available)":
             with st.expander("📝 Summary", expanded=False):
                 st.markdown(summary, unsafe_allow_html=True)
+        else:
+            st.write("📝 No summary available")
 
         # Metrics and Actions
         metric_col1, metric_col2, metric_col3, metric_col4 = st.columns([4, 2, 2, 2])
