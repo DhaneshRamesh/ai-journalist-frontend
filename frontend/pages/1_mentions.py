@@ -65,14 +65,22 @@ def fetch_mentions(limit=50, sources=None, sentiment=None, flagged=None):
         st.error(f"❌ Unexpected error: {e}")
         return []
 
+# ✅ FIXED VERSION — JSON body ingestion
 def ingest_by_keywords(keywords, per_keyword_limit=5):
-    """Dynamic ingestion by user keywords (QUERY PARAMS)."""
+    """Dynamic ingestion by user keywords (JSON BODY)."""
     try:
-        params = [("keywords", kw) for kw in keywords] + [("per_keyword_limit", per_keyword_limit)]
-        headers = {"x-admin-token": ADMIN_TOKEN}
+        payload = {
+            "source": "google",
+            "keywords": keywords,
+            "per_keyword_limit": per_keyword_limit
+        }
+        headers = {
+            "x-admin-token": ADMIN_TOKEN,
+            "Content-Type": "application/json"
+        }
         resp = requests.post(
             f"{BACKEND}/api/ingest",
-            params=params,
+            json=payload,
             headers=headers,
             timeout=120
         )
@@ -128,12 +136,14 @@ articles_per_keyword = st.sidebar.slider(
     value=5,
     help="5-10 recommended for speed"
 )
+
+# ✅ Fixed ingestion button (JSON body)
 if st.sidebar.button("🚀 FETCH BY KEYWORDS", type="primary", use_container_width=True):
     keywords = [kw.strip() for kw in keywords_input.split("\n") if kw.strip()]
     if keywords:
         with st.spinner(f"🔍 Fetching {len(keywords)} keywords from Google News..."):
             result = ingest_by_keywords(keywords, articles_per_keyword)
-            if result and result.get("status") == "success":
+            if result and result.get("status") in ("success", "ok"):
                 inserted = result.get("inserted", 0)
                 st.sidebar.success(f"✅ Fetched **{inserted}** articles from **{len(keywords)}** keywords!")
                 st.session_state.last_keywords = keywords
@@ -419,7 +429,7 @@ if risk_scores:
         labels={"risk_score": "Risk Score"},
         color_discrete_sequence=["#3B82F6"],
         color="risk_score",
-        color_continuous_scale=["#10B981", "#F59E0B", "#EF4444"]  # Green to red
+        color_continuous_scale=["#10B981", "#F59E0B", "#EF4444"]
     )
     st.plotly_chart(fig_hist, use_container_width=True)
 
@@ -427,9 +437,9 @@ if risk_scores:
 st.markdown("---")
 st.markdown(
     """
-    *Powered by [AI Journalist](https://github.com/DhaneshRamesh/ai-journalist)*
-    *Dynamic Google News RSS + FastAPI 🚀*
-    *Last updated: ~60s ago | 🔄 [Refresh](#)*
+    *Powered by [AI Journalist](https://github.com/DhaneshRamesh/ai-journalist)*  
+    *Dynamic Google News RSS + FastAPI 🚀*  
+    *Last updated: ~60s ago | 🔄 [Refresh](#)*  
     """,
     unsafe_allow_html=True
 )
